@@ -26,7 +26,6 @@ jobs:
           # Check secrets
           [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
           [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
-          [ -z "${{ secrets.AWS_REGION }}" ] && missing_items+=("Secret: AWS_REGION")
 
           # Check variables (with defaults)
           [ -z "${{ vars.TF_STATE_BUCKET }}" ] && echo "Note: Using default value for TF_STATE_BUCKET"
