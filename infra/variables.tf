@@ -33,3 +33,17 @@ variable "scan_on_push" {
   type        = bool
   default     = false
 }
+
+variable "docdb_master_username" {
+  description = "Master username for the DocumentDB cluster"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "docdb_master_password" {
+  description = "Master password for the DocumentDB cluster"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

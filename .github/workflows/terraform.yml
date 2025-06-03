@@ -22,6 +22,8 @@ jobs:
           # Check secrets
           [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
           [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
+          [ -z "${{ secrets.TF_VAR_docdb_master_username }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_username")
+          [ -z "${{ secrets.TF_VAR_docdb_master_password }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_password")
 
           # Check variables (with defaults)
           [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
@@ -120,5 +122,7 @@ jobs:
             })
 
       - name: Terraform Apply
-        # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve \
+          -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
+          -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
