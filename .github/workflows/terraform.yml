@@ -10,10 +10,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  TF_WORKSPACE: "dev"
-
 jobs:
   verify-secrets:
     name: Verify Required Secrets
