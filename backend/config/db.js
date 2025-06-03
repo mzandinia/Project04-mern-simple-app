@@ -11,7 +11,12 @@ console.log(`DB_URI: ${DB_URI}`);
 
 export const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(DB_URI);
+    const conn = await mongoose.connect(DB_URI, {
+      authMechanism: "DEFAULT",
+      tls: true,
+      tlsCAFile: "global-bundle.pem",
+      tlsAllowInvalidCertificates: false,
+    });
     console.log(`Connected to DocumentDB: ${conn.connection.host}`);
   } catch (error) {
     console.error(`Can't connect to DB: ${error.message}`);
