@@ -82,7 +82,7 @@ jobs:
         id: get-ecr-url
         run: |
           # Install jq if not already installed
-          sudo apt-get update && sudo apt-get install -y jq
+          sudo apt-get update && sudo apt-get install -y jq wget
 
           # Get the ECR repository name from Terraform state
           ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/s3-deployment/terraform.tfstate - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
@@ -106,8 +106,8 @@ jobs:
         working-directory: ./backend
         run: |
           # Build Docker image
-          docker build -t $ECR_REPO_URL:$IMAGE_TAG .
-          docker build -t $ECR_REPO_URL:latest .
+          docker build --no-cache -t $ECR_REPO_URL:$IMAGE_TAG .
+          docker build --no-cache -t $ECR_REPO_URL:latest .
 
           # Push Docker image to ECR
           docker push $ECR_REPO_URL:$IMAGE_TAG
