@@ -1,0 +1,129 @@
+name: Build Infrastructure via Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "infra/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  TF_WORKSPACE: "dev"
+
+jobs:
+  verify-secrets:
+    name: Verify Required Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets and variables
+        run: |
+          missing_items=()
+
+          # Check secrets
+          [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
+          [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
+          [ -z "${{ secrets.AWS_REGION }}" ] && missing_items+=("Secret: AWS_REGION")
+
+          # Check variables (with defaults)
+          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && echo "Note: Using default value for TF_STATE_BUCKET"
+          [ -z "${{ vars.TF_STATE_KEY }}" ] && echo "Note: Using default value for TF_STATE_KEY"
+          [ -z "${{ vars.AWS_REGION }}" ] && echo "Note: Using default value for AWS_REGION"
+          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && echo "Note: Using default value for TF_LOCK_TABLE"
+
+          if [ ${#missing_items[@]} -ne 0 ]; then
+            echo "Error: The following required items are missing:"
+            printf '%s\n' "${missing_items[@]}"
+            echo "Please add these in your GitHub repository settings"
+            exit 1
+          fi
+
+          echo "All required configurations are present"
+
+  terraform:
+    name: Terraform
+    needs: verify-secrets
+    runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    defaults:
+      run:
+        working-directory: ./infra
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET || 'terraform-state-bucket-majid' }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY || 's3-deployment/terraform.tfstate' }}" \
+            -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE || 'terraform-lock-table' }}"
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -detailed-exitcode -no-color
+          echo "changes=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Update Pull Request
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: "${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`\n
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve
