@@ -16,8 +16,9 @@ RUN npm ci --only=production
 # Copy app source
 COPY . .
 
-# Download the Amazon DocumentDB certificate
-RUN wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+# Install wget and download the Amazon DocumentDB certificate
+RUN apt-get update && apt-get install -y wget && \
+    wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 # Change ownership to non-root user
 RUN chown -R nodeuser:nodejs .
