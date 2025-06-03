@@ -28,10 +28,10 @@ jobs:
           [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
 
           # Check variables (with defaults)
-          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && echo "Note: Using default value for TF_STATE_BUCKET"
-          [ -z "${{ vars.TF_STATE_KEY }}" ] && echo "Note: Using default value for TF_STATE_KEY"
-          [ -z "${{ vars.AWS_REGION }}" ] && echo "Note: Using default value for AWS_REGION"
-          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && echo "Note: Using default value for TF_LOCK_TABLE"
+          [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
+          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
+          [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
+          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && missing_items+=("Variable: TF_LOCK_TABLE")
 
           if [ ${#missing_items[@]} -ne 0 ]; then
             echo "Error: The following required items are missing:"
@@ -61,7 +61,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -124,5 +124,5 @@ jobs:
             })
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
