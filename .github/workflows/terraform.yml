@@ -77,10 +77,10 @@ jobs:
         id: init
         run: |
           terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET || 'terraform-state-bucket-majid' }}" \
-            -backend-config="key=${{ vars.TF_STATE_KEY || 's3-deployment/terraform.tfstate' }}" \
-            -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE || 'terraform-lock-table' }}"
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
 
       - name: Terraform Validate
         id: validate

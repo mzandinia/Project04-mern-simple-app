@@ -23,19 +23,24 @@ jobs:
         run: |
           missing_secrets=()
 
-          [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_secrets+=("AWS_ACCESS_KEY_ID")
-          [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_secrets+=("AWS_SECRET_ACCESS_KEY")
-          [ -z "${{ secrets.AWS_REGION }}" ] && missing_secrets+=("AWS_REGION")
-          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_secrets+=("TF_STATE_BUCKET")
+          # Check secrets
+          [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
+          [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
 
-          if [ ${#missing_secrets[@]} -ne 0 ]; then
-            echo "Error: The following required secrets are missing:"
-            printf '%s\n' "${missing_secrets[@]}"
-            echo "Please add these secrets in your GitHub repository settings"
+          # Check variables (with defaults)
+          [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
+          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
+          [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
+          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && missing_items+=("Variable: TF_LOCK_TABLE")
+
+          if [ ${#missing_items[@]} -ne 0 ]; then
+            echo "Error: The following required items are missing:"
+            printf '%s\n' "${missing_items[@]}"
+            echo "Please add these in your GitHub repository settings"
             exit 1
           fi
 
-          echo "All required secrets are configured"
+          echo "All required configurations are present"
 
   check-changes:
     name: Check Backend Changes
@@ -75,7 +80,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Get ECR Repository URL
         id: get-ecr-url
@@ -84,7 +89,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y jq
 
           # Get the ECR repository name from Terraform state
-          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET || 'terraform-state-bucket-majid' }}/s3-deployment/terraform.tfstate - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
+          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/s3-deployment/terraform.tfstate - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
           if [ -z "$ECR_REPO_NAME" ]; then
             echo "Failed to get ECR repository name from Terraform state"
             exit 1
