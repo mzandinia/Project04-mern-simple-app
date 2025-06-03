@@ -5,7 +5,7 @@ const DBPassword = process.env.DBPassword;
 const DBHost = process.env.DBHost;
 const DBPort = process.env.DBPort;
 
-const DB_URI = `mongodb://${DBUsername}:${DBPassword}@${DBHost}:${DBPort}/trivia?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false`;
+const DB_URI = `mongodb://${DBUsername}:${DBPassword}@${DBHost}:${DBPort}?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false`;
 
 console.log(`DB_URI: ${DB_URI}`);
 
