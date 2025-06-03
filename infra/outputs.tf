@@ -12,3 +12,8 @@ output "registry_id" {
   description = "The registry ID where the repository was created"
   value       = aws_ecr_repository.backend.registry_id
 }
+
+output "docdb_cluster_endpoint" {
+  description = "The access endpoint of the DocumentDB cluster"
+  value       = aws_docdb_cluster.default.endpoint
+}
