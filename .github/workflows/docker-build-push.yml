@@ -7,68 +7,34 @@ on:
       - completed
     branches: [main]
 
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-
 jobs:
-  verify-secrets:
-    name: Verify Required Secrets
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: ubuntu-latest
-    # defaults:
-    #   run:
-    #     working-directory: ../backend
-    steps:
-      - name: Check required secrets
-        run: |
-          missing_secrets=()
+  # check-changes:
+  #   name: Check Backend Changes
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     has_changes: ${{ steps.check.outputs.has_changes }}
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 2
 
-          # Check secrets
-          [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
-          [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
-
-          # Check variables (with defaults)
-          [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
-          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
-          [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
-          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && missing_items+=("Variable: TF_LOCK_TABLE")
-
-          if [ ${#missing_items[@]} -ne 0 ]; then
-            echo "Error: The following required items are missing:"
-            printf '%s\n' "${missing_items[@]}"
-            echo "Please add these in your GitHub repository settings"
-            exit 1
-          fi
-
-          echo "All required configurations are present"
-
-  check-changes:
-    name: Check Backend Changes
-    runs-on: ubuntu-latest
-    outputs:
-      has_changes: ${{ steps.check.outputs.has_changes }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for backend changes
-        id: check
-        run: |
-          git diff --name-only HEAD^ HEAD > changes.txt
-          if grep -q "^backend/" changes.txt; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "Backend changes detected"
-          else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No backend changes"
-          fi
+  #     - name: Check for backend changes
+  #       id: check
+  #       run: |
+  #         git diff --name-only HEAD^ HEAD > changes.txt
+  #         if grep -q "^backend/" changes.txt; then
+  #           echo "has_changes=true" >> $GITHUB_OUTPUT
+  #           echo "Backend changes detected"
+  #         else
+  #           echo "has_changes=false" >> $GITHUB_OUTPUT
+  #           echo "No backend changes"
+  #         fi
 
   build-and-push:
     name: Build and Push to ECR
-    needs: [verify-secrets, check-changes]
-    if: needs.check-changes.outputs.has_changes == 'true'
+    # needs: [check-changes]
+    # if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
 
     steps:
