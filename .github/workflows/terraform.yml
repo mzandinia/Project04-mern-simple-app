@@ -123,6 +123,4 @@ jobs:
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve \
-          -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
-          -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
+        run: terraform apply -auto-approve -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
