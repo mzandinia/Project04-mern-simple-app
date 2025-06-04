@@ -31,46 +31,75 @@ jobs:
         run: |
           MAX_RETRIES=90  # 30 minutes with 20s delay
           RETRY_COUNT=0
+          INFRA_READY=false
 
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$INFRA_READY" = false ]; do
+            echo "Checking infrastructure components (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
             # Check App Runner Service
+            echo "Checking App Runner service..."
             APP_RUNNER_URL=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].ServiceUrl" --output text)
+            if [ -z "$APP_RUNNER_URL" ]; then
+              echo "❌ App Runner service not found"
+            else
+              echo "✅ App Runner service found: $APP_RUNNER_URL"
+            fi
 
             # Check S3 Bucket
+            echo "Checking S3 bucket..."
             S3_BUCKET=$(aws s3api list-buckets --query "Buckets[?Name=='sample-frontend-bucket'].Name" --output text)
+            if [ -z "$S3_BUCKET" ]; then
+              echo "❌ S3 bucket not found"
+            else
+              echo "✅ S3 bucket found: $S3_BUCKET"
+            fi
 
             # Check CloudFront Distribution
+            echo "Checking CloudFront distribution..."
             CF_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Origins.Items[].DomainName, 'sample-frontend-bucket')].Id" --output text)
+            if [ -z "$CF_DIST" ]; then
+              echo "❌ CloudFront distribution not found"
+            else
+              echo "✅ CloudFront distribution found: $CF_DIST"
+            fi
 
+            # Check if all components are available
             if [ ! -z "$APP_RUNNER_URL" ] && [ ! -z "$S3_BUCKET" ] && [ ! -z "$CF_DIST" ]; then
-              echo "All infrastructure components are available"
+              echo "✅ All infrastructure components are available"
               echo "APP_RUNNER_URL=https://$APP_RUNNER_URL" >> $GITHUB_ENV
               echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
               echo "CF_DISTRIBUTION_ID=$CF_DIST" >> $GITHUB_ENV
-              break
+              INFRA_READY=true
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "❌ Infrastructure not ready after 30 minutes"
+                exit 1
+              fi
+              echo "⏳ Waiting 20 seconds before next attempt..."
+              sleep 20
             fi
-
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-              echo "Infrastructure not ready after 30 minutes"
-              exit 1
-            fi
-
-            echo "Waiting for infrastructure... Attempt $RETRY_COUNT/$MAX_RETRIES"
-            sleep 20
           done
 
           # Check if backend is healthy
-          for i in {1..30}; do
+          echo "Checking backend health..."
+          HEALTH_CHECK_RETRIES=30
+          BACKEND_HEALTHY=false
+
+          for i in $(seq 1 $HEALTH_CHECK_RETRIES); do
+            echo "Health check attempt $i/$HEALTH_CHECK_RETRIES..."
             if curl -s "https://$APP_RUNNER_URL/health" > /dev/null; then
-              echo "Backend is healthy"
+              echo "✅ Backend is healthy"
+              BACKEND_HEALTHY=true
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "Backend health check failed"
+
+            if [ $i -eq $HEALTH_CHECK_RETRIES ]; then
+              echo "❌ Backend health check failed after $HEALTH_CHECK_RETRIES attempts"
               exit 1
             fi
-            echo "Waiting for backend to be healthy... ($i/30)"
+
+            echo "⏳ Waiting 10 seconds before next health check..."
             sleep 10
           done
 
