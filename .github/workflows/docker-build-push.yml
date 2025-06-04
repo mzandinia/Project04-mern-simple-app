@@ -1,11 +1,12 @@
 name: Build and Push to ECR
 
 on:
-  workflow_run:
-    workflows: ["Setup ECR Repository"]
-    types:
-      - completed
+  push:
     branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/docker-build-push.yml"
+  workflow_dispatch:
 
 jobs:
   check-changes:
@@ -31,11 +32,12 @@ jobs:
             echo "No backend changes"
           fi
 
-  check-ecr-empty:
-    name: Check if ECR Repository is Empty
+  check-ecr:
+    name: Check ECR Repository
     runs-on: ubuntu-latest
     outputs:
-      is_empty: ${{ steps.check.outputs.is_empty }}
+      exists: ${{ steps.check.outputs.exists }}
+      repo_url: ${{ steps.check.outputs.repo_url }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -44,27 +46,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Check ECR repository images
+      - name: Check ECR repository
         id: check
         run: |
-          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/s3-deployment/terraform.tfstate - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
+          # Get the ECR repository name from Terraform state
+          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/${{ vars.TF_STATE_KEY }} - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
+
           if [ -z "$ECR_REPO_NAME" ]; then
-            echo "Failed to get ECR repository name from Terraform state"
-            exit 1
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ECR repository not found in Terraform state"
+            exit 0
           fi
-          IMAGE_COUNT=$(aws ecr list-images --repository-name $ECR_REPO_NAME --query 'imageIds' --output json | jq length)
-          if [ "$IMAGE_COUNT" -eq 0 ]; then
-            echo "is_empty=true" >> $GITHUB_OUTPUT
-            echo "ECR repository is empty"
+
+          # Check if repository exists in ECR
+          if aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" 2>/dev/null; then
+            REPO_URL=$(aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --query 'repositories[0].repositoryUri' --output text)
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
+            echo "ECR repository exists: $REPO_URL"
           else
-            echo "is_empty=false" >> $GITHUB_OUTPUT
-            echo "ECR repository has images"
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ECR repository does not exist"
           fi
 
   build-and-push:
     name: Build and Push to ECR
-    needs: [check-changes, check-ecr-empty]
-    if: needs.check-changes.outputs.has_changes == 'true' || needs.check-ecr-empty.outputs.is_empty == 'true'
+    needs: [check-changes, check-ecr]
+    if: needs.check-changes.outputs.has_changes == 'true' && needs.check-ecr.outputs.exists == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -78,34 +86,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Get ECR Repository URL
-        id: get-ecr-url
-        run: |
-          # Install jq if not already installed
-          sudo apt-get update && sudo apt-get install -y jq wget
-
-          # Get the ECR repository name from Terraform state
-          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/s3-deployment/terraform.tfstate - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
-          if [ -z "$ECR_REPO_NAME" ]; then
-            echo "Failed to get ECR repository name from Terraform state"
-            exit 1
-          fi
-
-          # Get the ECR repository URL using AWS CLI
-          ECR_REPO_URL=$(aws ecr describe-repositories --repository-names $ECR_REPO_NAME --query 'repositories[0].repositoryUri' --output text)
-          echo "ECR_REPO_URL=$ECR_REPO_URL" >> $GITHUB_ENV
-          echo "Retrieved ECR Repository URL: $ECR_REPO_URL"
-
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image to Amazon ECR
         env:
-          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPO_URL: ${{ needs.check-ecr.outputs.repo_url }}
         working-directory: ./backend
         run: |
-          # Build Docker image with build args for DB credentials
+          # Build Docker image
           docker build --no-cache -t $ECR_REPO_URL:latest .
 
           # Push Docker image to ECR

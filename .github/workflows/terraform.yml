@@ -6,16 +6,22 @@ on:
     types:
       - completed
     branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
   pull_request:
     branches: [main]
     paths:
       - "infra/**"
-      - ".github/workflows/**"
-  workflow_dispatch:
+      - ".github/workflows/terraform.yml"
 
 jobs:
   verify-secrets:
     name: Verify Required Secrets
+    # Only run if the workflow was triggered by a push/PR or if the build-and-push workflow succeeded
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Check required secrets and variables
@@ -28,7 +34,7 @@ jobs:
           [ -z "${{ secrets.TF_VAR_docdb_master_username }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_username")
           [ -z "${{ secrets.TF_VAR_docdb_master_password }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_password")
 
-          # Check variables (with defaults)
+          # Check variables
           [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
           [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
           [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
@@ -90,7 +96,12 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -detailed-exitcode -no-color
+          # Exclude ECR repository from plan if it exists
+          if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
+            terraform plan -detailed-exitcode -no-color -target="!aws_ecr_repository.backend"
+          else
+            terraform plan -detailed-exitcode -no-color
+          fi
           echo "changes=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
@@ -125,5 +136,15 @@ jobs:
             })
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
+        run: |
+          # Exclude ECR repository from apply if it exists
+          if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
+            terraform apply -auto-approve -target="!aws_ecr_repository.backend" \
+              -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
+              -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
+          else
+            terraform apply -auto-approve \
+              -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
+              -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
+          fi
