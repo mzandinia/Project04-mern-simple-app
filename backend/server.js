@@ -27,6 +27,11 @@ app.use(
 
 app.use(express.json());
 
+// Health check endpoint for App Runner
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy" });
+});
+
 app.use("/api/products", productRoutes);
 
 app.listen(port, () => {

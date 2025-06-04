@@ -53,7 +53,7 @@ resource "aws_apprunner_service" "backend" {
       vpc_connector_arn = aws_apprunner_vpc_connector.docdb.arn
     }
     ingress_configuration {
-      is_publicly_accessible = true
+      is_publicly_accessible = false
     }
   }
 

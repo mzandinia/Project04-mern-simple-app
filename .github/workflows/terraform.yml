@@ -18,40 +18,8 @@ on:
       - ".github/workflows/terraform.yml"
 
 jobs:
-  verify-secrets:
-    name: Verify Required Secrets
-    # Only run if the workflow was triggered by a push/PR or if the build-and-push workflow succeeded
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check required secrets and variables
-        run: |
-          missing_items=()
-
-          # Check secrets
-          [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
-          [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
-          [ -z "${{ secrets.TF_VAR_docdb_master_username }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_username")
-          [ -z "${{ secrets.TF_VAR_docdb_master_password }}" ] && missing_items+=("Secret: TF_VAR_docdb_master_password")
-
-          # Check variables
-          [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
-          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
-          [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
-          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && missing_items+=("Variable: TF_LOCK_TABLE")
-
-          if [ ${#missing_items[@]} -ne 0 ]; then
-            echo "Error: The following required items are missing:"
-            printf '%s\n' "${missing_items[@]}"
-            echo "Please add these in your GitHub repository settings"
-            exit 1
-          fi
-
-          echo "All required configurations are present"
-
   terraform:
     name: Terraform
-    needs: verify-secrets
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.plan.outputs.changes }}
@@ -80,14 +48,42 @@ jobs:
         run: terraform fmt -check
         continue-on-error: true
 
+      - name: Check and Release State Lock
+        run: |
+          # Get the current lock info
+          LOCK_INFO=$(aws dynamodb get-item \
+            --table-name ${{ vars.TF_LOCK_TABLE }} \
+            --key '{"LockID": {"S": "terraform-state-bucket-majid/s3-deployment/terraform.tfstate"}}' \
+            --query 'Item' \
+            --output json)
+
+          if [ ! -z "$LOCK_INFO" ]; then
+            echo "Found existing lock. Checking age..."
+            LOCK_TIME=$(echo $LOCK_INFO | jq -r '.Info.S')
+            CURRENT_TIME=$(date +%s)
+            LOCK_AGE=$((CURRENT_TIME - $(date -d "$LOCK_TIME" +%s)))
+
+            # If lock is older than 15 minutes, force unlock
+            if [ $LOCK_AGE -gt 900 ]; then
+              echo "Lock is older than 15 minutes. Force unlocking..."
+              terraform force-unlock -force "$(echo $LOCK_INFO | jq -r '.ID.S')"
+            fi
+          fi
+
       - name: Terraform Init
         id: init
         run: |
-          terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
+          for i in {1..3}; do
+            if terraform init \
+              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+              -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+              -backend-config="region=${{ vars.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"; then
+              break
+            fi
+            echo "Init failed, retrying in 30 seconds..."
+            sleep 30
+          done
 
       - name: Terraform Validate
         id: validate
@@ -96,13 +92,26 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          # Exclude ECR repository from plan if it exists
-          if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
-            terraform plan -detailed-exitcode -no-color -target="!aws_ecr_repository.backend"
-          else
-            terraform plan -detailed-exitcode -no-color
-          fi
-          echo "changes=$?" >> $GITHUB_OUTPUT
+          for i in {1..3}; do
+            # Exclude ECR repository from plan if it exists
+            if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
+              if terraform plan -detailed-exitcode -no-color -target="!aws_ecr_repository.backend" -lock-timeout=5m; then
+                echo "changes=$?" >> $GITHUB_OUTPUT
+                break
+              fi
+            else
+              if terraform plan -detailed-exitcode -no-color -lock-timeout=5m; then
+                echo "changes=$?" >> $GITHUB_OUTPUT
+                break
+              fi
+            fi
+            if [ $i -eq 3 ]; then
+              echo "Plan failed after 3 retries"
+              exit 1
+            fi
+            echo "Plan failed, retrying in 30 seconds..."
+            sleep 30
+          done
         continue-on-error: true
 
       - name: Update Pull Request
@@ -138,13 +147,25 @@ jobs:
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
         run: |
-          # Exclude ECR repository from apply if it exists
-          if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
-            terraform apply -auto-approve -target="!aws_ecr_repository.backend" \
-              -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
-              -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
-          else
-            terraform apply -auto-approve \
-              -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
-              -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
-          fi
+          for i in {1..3}; do
+            # Exclude ECR repository from apply if it exists
+            if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
+              if terraform apply -auto-approve -target="!aws_ecr_repository.backend" -lock-timeout=5m \
+                -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
+                -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"; then
+                break
+              fi
+            else
+              if terraform apply -auto-approve -lock-timeout=5m \
+                -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
+                -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"; then
+                break
+              fi
+            fi
+            if [ $i -eq 3 ]; then
+              echo "Apply failed after 3 retries"
+              exit 1
+            fi
+            echo "Apply failed, retrying in 30 seconds..."
+            sleep 30
+          done
