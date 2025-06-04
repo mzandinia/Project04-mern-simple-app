@@ -2,7 +2,7 @@ name: Build and Push to ECR
 
 on:
   workflow_run:
-    workflows: ["Build Infrastructure via Terraform"]
+    workflows: ["Setup ECR Repository"]
     types:
       - completed
     branches: [main]

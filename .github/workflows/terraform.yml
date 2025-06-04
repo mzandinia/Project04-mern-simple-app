@@ -1,14 +1,16 @@
 name: Build Infrastructure via Terraform
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build and Push to ECR"]
+    types:
+      - completed
     branches: [main]
-    paths:
-      - "backend/**"
-      - "infra/**"
-      - ".github/workflows/**"
   pull_request:
     branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/**"
 
 jobs:
   verify-secrets:
