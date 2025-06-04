@@ -52,28 +52,6 @@ jobs:
         run: terraform fmt -check
         continue-on-error: true
 
-      - name: Check and Release State Lock
-        run: |
-          # Get the current lock info
-          LOCK_INFO=$(aws dynamodb get-item \
-            --table-name ${{ vars.TF_LOCK_TABLE }} \
-            --key '{"LockID": {"S": "terraform-state-bucket-majid/s3-deployment/terraform.tfstate"}}' \
-            --query 'Item' \
-            --output json)
-
-          if [ ! -z "$LOCK_INFO" ]; then
-            echo "Found existing lock. Checking age..."
-            LOCK_TIME=$(echo $LOCK_INFO | jq -r '.Info.S')
-            CURRENT_TIME=$(date +%s)
-            LOCK_AGE=$((CURRENT_TIME - $(date -d "$LOCK_TIME" +%s)))
-
-            # If lock is older than 15 minutes, force unlock
-            if [ $LOCK_AGE -gt 900 ]; then
-              echo "Lock is older than 15 minutes. Force unlocking..."
-              terraform force-unlock -force "$(echo $LOCK_INFO | jq -r '.ID.S')"
-            fi
-          fi
-
       - name: Terraform Init
         id: init
         run: |
