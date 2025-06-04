@@ -11,17 +11,15 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
-    paths-ignore:
-      - "backend/**"
-      - "frontend/**"
+      - "!backend/**"
+      - "!frontend/**"
   pull_request:
     branches: [main]
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
-    paths-ignore:
-      - "backend/**"
-      - "frontend/**"
+      - "!backend/**"
+      - "!frontend/**"
 
 jobs:
   terraform:
