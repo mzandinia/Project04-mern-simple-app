@@ -15,8 +15,9 @@ resource "aws_apprunner_service" "backend" {
           DBPassword = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/docdb/master/password"
         }
         runtime_environment_variables = {
-          DBHost = aws_docdb_cluster.default.endpoint
-          DBPort = "27017"
+          NODE_ENV = "production"
+          DBHost   = aws_docdb_cluster.default.endpoint
+          DBPort   = "27017"
         }
       }
       image_identifier      = "${aws_ecr_repository.backend.repository_url}:latest"
@@ -42,7 +43,7 @@ resource "aws_apprunner_service" "backend" {
   }
 
   health_check_configuration {
-    path                = "/"
+    path                = "/health"
     protocol            = "HTTP"
     healthy_threshold   = 1
     unhealthy_threshold = 5

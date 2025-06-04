@@ -5,18 +5,26 @@ const DBPassword = process.env.DBPassword;
 const DBHost = process.env.DBHost;
 const DBPort = process.env.DBPort;
 
-const DB_URI = `mongodb://${DBUsername}:${DBPassword}@${DBHost}:${DBPort}?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false`;
+const isProduction = process.env.NODE_ENV === "production";
 
-console.log(`DB_URI: ${DB_URI}`);
+const DB_URI = isProduction
+  ? `mongodb://${DBUsername}:${DBPassword}@${DBHost}:${DBPort}?tls=true&tlsCAFile=global-bundle.pem&retryWrites=false`
+  : `mongodb://${DBUsername}:${DBPassword}@${DBHost}:${DBPort}`;
 
 export const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(DB_URI, {
-      authMechanism: "DEFAULT",
-      tls: true,
-      tlsCAFile: "global-bundle.pem",
-      tlsAllowInvalidCertificates: false,
-    });
+    const options = isProduction
+      ? {
+          authMechanism: "DEFAULT",
+          tls: true,
+          tlsCAFile: "global-bundle.pem",
+          tlsAllowInvalidCertificates: false,
+        }
+      : {
+          authMechanism: "DEFAULT",
+        };
+
+    const conn = await mongoose.connect(DB_URI, options);
     console.log(`Connected to DocumentDB: ${conn.connection.host}`);
   } catch (error) {
     console.error(`Can't connect to DB: ${error.message}`);
