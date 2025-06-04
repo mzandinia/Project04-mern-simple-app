@@ -1,6 +1,6 @@
 resource "aws_apprunner_service" "backend" {
 
-  service_name = "mern-app-backend"
+  service_name = "mern-simple-app"
 
   source_configuration {
     authentication_configuration {
@@ -77,7 +77,8 @@ resource "aws_iam_role" "apprunner" {
         Principal = {
           Service = [
             "build.apprunner.amazonaws.com",
-            "tasks.apprunner.amazonaws.com"
+            "tasks.apprunner.amazonaws.com",
+            "ecr.amazonaws.com"
           ]
         }
         Action = "sts:AssumeRole"
@@ -131,7 +132,13 @@ resource "aws_iam_role_policy" "apprunner_policy" {
         Action = [
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Resource = [aws_ecr_repository.backend.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "ecr:GetAuthorizationToken"
         ]
         Resource = ["*"]
