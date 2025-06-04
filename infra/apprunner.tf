@@ -1,5 +1,20 @@
-resource "aws_apprunner_service" "backend" {
+# Get current region and account ID
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
 
+# Get SSM parameters for DocumentDB credentials
+data "aws_ssm_parameter" "docdb_username" {
+  name       = "/docdb/master/username"
+  depends_on = [aws_ssm_parameter.docdb_username]
+}
+
+data "aws_ssm_parameter" "docdb_password" {
+  name            = "/docdb/master/password"
+  with_decryption = true
+  depends_on      = [aws_ssm_parameter.docdb_password]
+}
+
+resource "aws_apprunner_service" "backend" {
   service_name = "mern-simple-app"
 
   source_configuration {
@@ -11,8 +26,8 @@ resource "aws_apprunner_service" "backend" {
       image_configuration {
         port = "3000"
         runtime_environment_secrets = {
-          DBUsername = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/docdb/master/username"
-          DBPassword = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/docdb/master/password"
+          DBUsername = data.aws_ssm_parameter.docdb_username.arn
+          DBPassword = data.aws_ssm_parameter.docdb_password.arn
         }
         runtime_environment_variables = {
           NODE_ENV = "production"
@@ -50,20 +65,17 @@ resource "aws_apprunner_service" "backend" {
     timeout             = 5
     interval            = 20
   }
-}
 
-# Get current region and account ID
-data "aws_region" "current" {}
-data "aws_caller_identity" "current" {}
+  tags = {
+    AllowCloudFrontAccess = "true"
+  }
 
-# Get SSM parameters for DocumentDB URI construction
-data "aws_ssm_parameter" "docdb_username" {
-  name = "/docdb/master/username"
-}
-
-data "aws_ssm_parameter" "docdb_password" {
-  name            = "/docdb/master/password"
-  with_decryption = true
+  depends_on = [
+    aws_ssm_parameter.docdb_username,
+    aws_ssm_parameter.docdb_password,
+    aws_docdb_cluster.default,
+    aws_ecr_repository.backend
+  ]
 }
 
 resource "aws_iam_role" "apprunner" {
