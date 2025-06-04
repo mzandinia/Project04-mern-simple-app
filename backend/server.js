@@ -7,6 +7,14 @@ const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 const app = express();
 
+// Add CORS headers
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
 app.use(express.json());
 
 // Health check endpoint for App Runner
