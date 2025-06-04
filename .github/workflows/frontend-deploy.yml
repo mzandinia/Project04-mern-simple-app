@@ -1,16 +1,15 @@
 name: Deploy Frontend
 
 on:
-  workflow_run:
-    workflows: ["Build Infrastructure via Terraform"]
-    types:
-      - completed
+  push:
     branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-deploy.yml"
+  workflow_dispatch:
 
 jobs:
   deploy:
-    # Only run if the terraform workflow succeeded
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -27,24 +26,51 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Get Backend URL and Check Health
-        id: backend
+      - name: Check Infrastructure Availability
+        id: check-infra
         run: |
-          # Get the App Runner URL using AWS CLI
-          APP_RUNNER_URL=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].ServiceUrl" --output text)
-          echo "APP_RUNNER_URL=https://$APP_RUNNER_URL" >> $GITHUB_ENV
+          MAX_RETRIES=90  # 30 minutes with 20s delay
+          RETRY_COUNT=0
 
-          # Wait for backend to be ready (retry for 5 minutes)
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Check App Runner Service
+            APP_RUNNER_URL=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].ServiceUrl" --output text)
+
+            # Check S3 Bucket
+            S3_BUCKET=$(aws s3api list-buckets --query "Buckets[?Name=='sample-frontend-bucket'].Name" --output text)
+
+            # Check CloudFront Distribution
+            CF_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Origins.Items[].DomainName, 'sample-frontend-bucket')].Id" --output text)
+
+            if [ ! -z "$APP_RUNNER_URL" ] && [ ! -z "$S3_BUCKET" ] && [ ! -z "$CF_DIST" ]; then
+              echo "All infrastructure components are available"
+              echo "APP_RUNNER_URL=https://$APP_RUNNER_URL" >> $GITHUB_ENV
+              echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+              echo "CF_DISTRIBUTION_ID=$CF_DIST" >> $GITHUB_ENV
+              break
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "Infrastructure not ready after 30 minutes"
+              exit 1
+            fi
+
+            echo "Waiting for infrastructure... Attempt $RETRY_COUNT/$MAX_RETRIES"
+            sleep 20
+          done
+
+          # Check if backend is healthy
           for i in {1..30}; do
-            if curl -s "$APP_RUNNER_URL/api/products" > /dev/null; then
-              echo "Backend is ready"
+            if curl -s "https://$APP_RUNNER_URL/health" > /dev/null; then
+              echo "Backend is healthy"
               break
             fi
             if [ $i -eq 30 ]; then
-              echo "Backend failed to respond"
+              echo "Backend health check failed"
               exit 1
             fi
-            echo "Waiting for backend to be ready... ($i/30)"
+            echo "Waiting for backend to be healthy... ($i/30)"
             sleep 10
           done
 
@@ -65,9 +91,8 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync dist/ s3://sample-frontend-bucket --delete
+          aws s3 sync dist/ s3://${{ env.S3_BUCKET }} --delete
 
       - name: Invalidate CloudFront Cache
         run: |
-          DISTRIBUTION_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Origins.Items[].DomainName, 'sample-frontend-bucket')].Id" --output text)
-          aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"
+          aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION_ID }} --paths "/*"
