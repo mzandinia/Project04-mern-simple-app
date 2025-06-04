@@ -27,27 +27,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.0"
-
-      - name: Terraform Init
-        working-directory: ./infra
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
-
       - name: Get Backend URL and Check Health
         id: backend
-        working-directory: ./infra
         run: |
-          # Get the App Runner URL from terraform output
-          APP_RUNNER_URL=$(terraform output -raw apprunner_service_url)
-          echo "APP_RUNNER_URL=$APP_RUNNER_URL" >> $GITHUB_ENV
+          # Get the App Runner URL using AWS CLI
+          APP_RUNNER_URL=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].ServiceUrl" --output text)
+          echo "APP_RUNNER_URL=https://$APP_RUNNER_URL" >> $GITHUB_ENV
 
           # Wait for backend to be ready (retry for 5 minutes)
           for i in {1..30}; do
