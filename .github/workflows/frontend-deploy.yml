@@ -29,6 +29,11 @@ jobs:
       - name: Check Infrastructure Availability
         id: check-infra
         run: |
+          # Get AWS account ID and region
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          AWS_REGION=${{ vars.AWS_REGION }}
+          echo "Using AWS Account: $AWS_ACCOUNT_ID in region: $AWS_REGION"
+
           MAX_RETRIES=90  # 30 minutes with 20s delay
           RETRY_COUNT=0
           INFRA_READY=false
@@ -38,11 +43,27 @@ jobs:
 
             # Check App Runner Service
             echo "Checking App Runner service..."
-            APP_RUNNER_URL=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].ServiceUrl" --output text)
-            if [ -z "$APP_RUNNER_URL" ]; then
-              echo "❌ App Runner service not found"
+            APP_RUNNER_SERVICE=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].[ServiceId,Status]" --output text)
+            if [ ! -z "$APP_RUNNER_SERVICE" ]; then
+              SERVICE_ID=$(echo "$APP_RUNNER_SERVICE" | cut -f1)
+              SERVICE_STATUS=$(echo "$APP_RUNNER_SERVICE" | cut -f2)
+              echo "✅ App Runner service found: $SERVICE_ID (Status: $SERVICE_STATUS)"
+
+              if [ "$SERVICE_STATUS" = "RUNNING" ]; then
+                APP_RUNNER_URL=$(aws apprunner describe-service --service-arn "arn:aws:apprunner:${AWS_REGION}:${AWS_ACCOUNT_ID}:service/mern-simple-app/${SERVICE_ID}" --query "Service.ServiceUrl" --output text)
+                echo "✅ App Runner URL: $APP_RUNNER_URL"
+              else
+                echo "⚠️ App Runner service is not in RUNNING state (current: $SERVICE_STATUS)"
+                APP_RUNNER_URL=""
+              fi
             else
-              echo "✅ App Runner service found: $APP_RUNNER_URL"
+              echo "❌ App Runner service not found"
+              APP_RUNNER_URL=""
+            fi
+            if [ -z "$APP_RUNNER_URL" ]; then
+              echo "❌ App Runner URL is empty"
+            else
+              echo "✅ App Runner URL found: $APP_RUNNER_URL"
             fi
 
             # Check S3 Bucket
