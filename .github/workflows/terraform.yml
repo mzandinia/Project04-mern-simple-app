@@ -1,19 +1,7 @@
 name: Build Infrastructure via Terraform
 
 on:
-  # workflow_run:
-  #   workflows: ["Build and Push to ECR"]
-  #   types:
-  #     - completed
-  #   branches: [main]
   # push:
-  #   branches: [main]
-  #   paths:
-  #     - "infra/**"
-  #     - ".github/workflows/terraform.yml"
-  #     - "!backend/**"
-  #     - "!frontend/**"
-  # pull_request:
   #   branches: [main]
   #   paths:
   #     - "infra/**"
@@ -30,8 +18,66 @@ env:
   TF_LOCK_TABLE: terraform-locks-8806442
 
 jobs:
+  check-image:
+    name: Check ECR Repository
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+      repo_url: ${{ steps.check.outputs.repo_url }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check ECR image
+        id: check
+        run: |
+          MAX_RETRIES=60  # 30 minutes with 30s delay
+          RETRY_COUNT=0
+          IMAGE_READY=false
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$IMAGE_READY" = false ]; do
+            echo "Checking ECR image (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
+            # Get the ECR repository name from Terraform state
+            ECR_REPO_NAME=$(aws s3 cp s3://${{ env.TF_STATE_BUCKET }}/${{ env.TF_STATE_KEY }} - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
+
+            if [ "$ECR_REPO_NAME" ]; then
+              # Get repository URL
+              REPO_URL=$(aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --query 'repositories[0].repositoryUri' --output text 2>/dev/null)
+
+              if [ "$REPO_URL" ]; then
+                echo "Repository found: $REPO_URL"
+
+                # Check if latest image exists
+                if aws ecr describe-images --repository-name "$ECR_REPO_NAME" --image-ids imageTag=latest &>/dev/null; then
+                  echo "exists=true" >> $GITHUB_OUTPUT
+                  echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
+                  echo "✅ Latest image found in ECR repository: $REPO_URL:latest"
+                  IMAGE_READY=true
+                  exit 0
+                else
+                  echo "⚠️ Repository exists but no 'latest' image found"
+                fi
+              fi
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ ECR image not ready after 30 minutes"
+              exit 1
+            fi
+            echo "⏳ Waiting 30 seconds before next attempt..."
+            sleep 30
+          done
+
   terraform:
     name: Terraform
+    needs: [check-image]
+    if: needs.check-image.outputs.exists == 'true'
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.plan.outputs.changes }}
@@ -48,12 +94,12 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.0"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Format
         id: fmt
@@ -63,17 +109,11 @@ jobs:
       - name: Terraform Init
         id: init
         run: |
-          for i in {1..3}; do
-            if terraform init \
-              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-              -backend-config="key=${{ vars.TF_STATE_KEY }}" \
-              -backend-config="region=${{ vars.AWS_REGION }}" \
-              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"; then
-              break
-            fi
-            echo "Init failed, retrying in 30 seconds..."
-            sleep 30
-          done
+          terraform init \
+           -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+           -backend-config="key=${{ env.TF_STATE_KEY }}" \
+           -backend-config="region=${{ env.AWS_REGION }}" \
+           -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}"
 
       - name: Terraform Validate
         id: validate
@@ -82,80 +122,10 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          for i in {1..3}; do
-            # Exclude ECR repository from plan if it exists
-            if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
-              if terraform plan -detailed-exitcode -no-color -target="!aws_ecr_repository.backend" -lock-timeout=5m; then
-                echo "changes=$?" >> $GITHUB_OUTPUT
-                break
-              fi
-            else
-              if terraform plan -detailed-exitcode -no-color -lock-timeout=5m; then
-                echo "changes=$?" >> $GITHUB_OUTPUT
-                break
-              fi
-            fi
-            if [ $i -eq 3 ]; then
-              echo "Plan failed after 3 retries"
-              exit 1
-            fi
-            echo "Plan failed, retrying in 30 seconds..."
-            sleep 30
-          done
-        continue-on-error: true
-
-      - name: Update Pull Request
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        env:
-          PLAN: "${{ steps.plan.outputs.stdout }}"
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
-            <details><summary>Show Plan</summary>
-
-            \`\`\`\n
-            ${process.env.PLAN}
-            \`\`\`
-
-            </details>
-
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            })
+          terraform plan -no-color -target="!aws_ecr_repository.backend" -lock-timeout=5m
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
         run: |
-          for i in {1..3}; do
-            # Exclude ECR repository from apply if it exists
-            if aws ecr describe-repositories --repository-names "${{ vars.PROJECT_NAME }}-backend" 2>/dev/null; then
-              if terraform apply -auto-approve -target="!aws_ecr_repository.backend" -lock-timeout=5m \
+          terraform apply -auto-approve -target="!aws_ecr_repository.backend" -lock-timeout=5m \
                 -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
-                -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"; then
-                break
-              fi
-            else
-              if terraform apply -auto-approve -lock-timeout=5m \
-                -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
-                -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"; then
-                break
-              fi
-            fi
-            if [ $i -eq 3 ]; then
-              echo "Apply failed after 3 retries"
-              exit 1
-            fi
-            echo "Apply failed, retrying in 30 seconds..."
-            sleep 30
-          done
+                -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"

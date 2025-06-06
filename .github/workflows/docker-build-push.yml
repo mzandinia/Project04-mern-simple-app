@@ -1,4 +1,4 @@
-name: Build and Push to ECR
+name: Build backend and Push to ECR
 
 on:
   # push:
@@ -16,29 +16,6 @@ env:
   TF_LOCK_TABLE: terraform-locks-8806442
 
 jobs:
-  check-changes:
-    name: Check Backend Changes
-    runs-on: ubuntu-latest
-    outputs:
-      has_changes: ${{ steps.check.outputs.has_changes }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for backend changes
-        id: check
-        run: |
-          git diff --name-only HEAD^ HEAD > changes.txt
-          if grep -q "^backend/" changes.txt; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "Backend changes detected"
-          else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No backend changes"
-          fi
-
   check-ecr:
     name: Check ECR Repository
     runs-on: ubuntu-latest
@@ -51,35 +28,50 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Check ECR repository
         id: check
         run: |
-          # Get the ECR repository name from Terraform state
-          ECR_REPO_NAME=$(aws s3 cp s3://${{ vars.TF_STATE_BUCKET }}/${{ vars.TF_STATE_KEY }} - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
 
-          if [ -z "$ECR_REPO_NAME" ]; then
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "ECR repository not found in Terraform state"
-            exit 0
-          fi
+          MAX_RETRIES=60  # 30 minutes with 30s delay
+          RETRY_COUNT=0
+          INFRA_READY=false
 
-          # Check if repository exists in ECR
-          if aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" 2>/dev/null; then
-            REPO_URL=$(aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --query 'repositories[0].repositoryUri' --output text)
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
-            echo "ECR repository exists: $REPO_URL"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "ECR repository does not exist"
-          fi
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$INFRA_READY" = false ]; do
+            echo "Checking ECR repository (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
+            # Get the ECR repository name from Terraform state
+            ECR_REPO_NAME=$(aws s3 cp s3://${{ env.TF_STATE_BUCKET }}/${{ env.TF_STATE_KEY }} - | jq -r '.resources[] | select(.type=="aws_ecr_repository") | .instances[0].attributes.name')
+
+            if [ "$ECR_REPO_NAME" ]; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "ECR repository found in Terraform state"
+
+                  # Check if repository exists in ECR
+              if aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" 2>/dev/null; then
+                REPO_URL=$(aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --query 'repositories[0].repositoryUri' --output text)
+                echo "exists=true" >> $GITHUB_OUTPUT
+                echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
+                echo "ECR repository exists: $REPO_URL"
+                INFRA_READY=true
+                exit 0
+              fi
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "❌ ECR repository not ready after 30 minutes"
+                exit 1
+              fi
+              echo "⏳ Waiting 30 seconds before next attempt..."
+              sleep 30
+            fi
+          done
 
   build-and-push:
     name: Build and Push to ECR
-    needs: [check-changes, check-ecr]
-    if: needs.check-changes.outputs.has_changes == 'true' && needs.check-ecr.outputs.exists == 'true'
+    needs: [check-ecr]
+    if: needs.check-ecr.outputs.exists == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -91,7 +83,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
