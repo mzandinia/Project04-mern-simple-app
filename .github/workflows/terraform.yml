@@ -1,25 +1,33 @@
 name: Build Infrastructure via Terraform
 
 on:
-  workflow_run:
-    workflows: ["Build and Push to ECR"]
-    types:
-      - completed
-    branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/terraform.yml"
-      - "!backend/**"
-      - "!frontend/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/terraform.yml"
-      - "!backend/**"
-      - "!frontend/**"
+  # workflow_run:
+  #   workflows: ["Build and Push to ECR"]
+  #   types:
+  #     - completed
+  #   branches: [main]
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "infra/**"
+  #     - ".github/workflows/terraform.yml"
+  #     - "!backend/**"
+  #     - "!frontend/**"
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - "infra/**"
+  #     - ".github/workflows/terraform.yml"
+  #     - "!backend/**"
+  #     - "!frontend/**"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+  TF_STATE_BUCKET: terraform-state--8806442
+  TF_STATE_KEY: terraform.tfstate
+  TF_LOCK_TABLE: terraform-locks-8806442
 
 jobs:
   terraform:

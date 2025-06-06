@@ -1,12 +1,19 @@
 name: Deploy Frontend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-deploy.yml"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "frontend/**"
+  #     - ".github/workflows/frontend-deploy.yml"
   workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+  TF_STATE_BUCKET: terraform-state--8806442
+  TF_STATE_KEY: terraform.tfstate
+  TF_LOCK_TABLE: terraform-locks-8806442
 
 jobs:
   deploy:

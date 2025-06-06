@@ -9,6 +9,13 @@ on:
       - ".github/workflows/ecr-setup.yml"
   workflow_dispatch:
 
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+  TF_STATE_BUCKET: terraform-state--8806442
+  TF_STATE_KEY: terraform.tfstate
+  TF_LOCK_TABLE: terraform-locks-8806442
+
 jobs:
   verify-secrets:
     name: Verify Required Secrets
@@ -21,12 +28,6 @@ jobs:
           # Check secrets
           [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && missing_items+=("Secret: AWS_ACCESS_KEY_ID")
           [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && missing_items+=("Secret: AWS_SECRET_ACCESS_KEY")
-
-          # Check variables
-          [ -z "${{ vars.AWS_REGION }}" ] && missing_items+=("Variable: AWS_REGION")
-          [ -z "${{ vars.TF_STATE_BUCKET }}" ] && missing_items+=("Variable: TF_STATE_BUCKET")
-          [ -z "${{ vars.TF_STATE_KEY }}" ] && missing_items+=("Variable: TF_STATE_KEY")
-          [ -z "${{ vars.TF_LOCK_TABLE }}" ] && missing_items+=("Variable: TF_LOCK_TABLE")
 
           if [ ${#missing_items[@]} -ne 0 ]; then
             echo "Error: The following required items are missing:"
@@ -54,21 +55,21 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.0"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
         id: init
         run: |
           terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ env.TF_STATE_KEY }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_LOCK_TABLE }}"
 
       - name: Terraform Plan ECR
         id: plan

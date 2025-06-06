@@ -1,0 +1,24 @@
+digraph INFRA {
+  node [ color = "black", fillcolor = "#E6E6E6", height =1, style = "filled,bold,rounded", fontname = "Arial" ];
+  "backend-ecr-repository" [ label = "backend-ecr-repository
+(AWS::ECR::Repository)", shape =cylinder, fillcolor = "#FFF5CD" ];
+  "apprunner-service" [ label = "apprunner-service
+(AWS::AppRunner::Service)", shape =rectangle, fillcolor = "#B7E0FF" ];
+  "apprunner-iam-role" [ label = "apprunner-iam-role
+(AWS::IAM::Role)", shape =rectangle ];
+  "apprunner-iam-policy" [ label = "apprunner-iam-policy
+(AWS::IAM::Policy)", shape =rectangle ];
+  "frontend-s3-bucket" [ label = "frontend-s3-bucket
+(AWS::S3::Bucket)", shape =cylinder, fillcolor = "#FFF5CD" ];
+  "cloudfront-distribution" [ label = "cloudfront-distribution
+(AWS::CloudFront::Distribution)", shape =rectangle, fillcolor = "#E78F81" ];
+  "cloudfront-origin-access-identity" [ label = "cloudfront-origin-access-identity
+(AWS::CloudFront::CloudFrontOriginAccessIdentity)", shape =rectangle ];
+  "s3-bucket-policy" [ label = "s3-bucket-policy
+(AWS::S3::BucketPolicy)", shape =rectangle ];
+  "apprunner-service" -> "backend-ecr-repository";
+  "apprunner-iam-policy" -> "apprunner-iam-role";
+  "cloudfront-distribution" -> "frontend-s3-bucket";
+  "s3-bucket-policy" -> "frontend-s3-bucket";
+  "s3-bucket-policy" -> "cloudfront-origin-access-identity";
+}

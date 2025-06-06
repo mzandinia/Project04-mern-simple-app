@@ -1,0 +1,239 @@
+name: Deploy MERN App to AWS ECS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: 'Deploy infrastructure (yes/no)'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+
+jobs:
+  setup:
+    name: Setup Deployment
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Check if infrastructure exists
+        id: check-infra
+        run: |
+          # Try to get the ECR repository URL
+          ECR_REPO=$(aws ecr describe-repositories --repository-names ${{ secrets.ECR_REPO_NAME }} --query 'repositories[0].repositoryUri' --output text 2>/dev/null || echo "")
+          
+          if [ -z "$ECR_REPO" ] || [ "${{ github.event.inputs.deploy_infrastructure }}" == "yes" ]; then
+            echo "deploy_infra=true" >> $GITHUB_OUTPUT
+            echo "Infrastructure deployment needed"
+          else
+            echo "deploy_infra=false" >> $GITHUB_OUTPUT
+            echo "Using existing infrastructure"
+            echo "ecr_repo=$ECR_REPO" >> $GITHUB_OUTPUT
+            
+            # Get ECS cluster and service names
+            CLUSTER_NAME="${{ secrets.ECS_CLUSTER_NAME }}"
+            SERVICE_NAME="${{ secrets.ECS_SERVICE_NAME }}"
+            BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}"
+            CLOUDFRONT_DOMAIN="${{ secrets.CLOUDFRONT_DOMAIN }}"
+            
+            echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+            echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+            echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+            echo "cloudfront_domain=$CLOUDFRONT_DOMAIN" >> $GITHUB_OUTPUT
+          fi
+    
+    outputs:
+      deploy_infra: ${{ steps.check-infra.outputs.deploy_infra }}
+      ecr_repo: ${{ steps.check-infra.outputs.ecr_repo }}
+      cluster_name: ${{ steps.check-infra.outputs.cluster_name }}
+      service_name: ${{ steps.check-infra.outputs.service_name }}
+      bucket_name: ${{ steps.check-infra.outputs.bucket_name }}
+      cloudfront_domain: ${{ steps.check-infra.outputs.cloudfront_domain }}
+
+  terraform:
+    name: Deploy Infrastructure
+    needs: setup
+    if: needs.setup.outputs.deploy_infra == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Terraform Init
+        working-directory: ./infra
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=mern-app/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+      
+      - name: Terraform Apply
+        working-directory: ./infra
+        run: |
+          terraform apply -auto-approve \
+            -var="docdb_master_username=${{ secrets.DOCDB_USERNAME }}" \
+            -var="docdb_master_password=${{ secrets.DOCDB_PASSWORD }}" \
+            -var="ecr_repository_name=${{ secrets.ECR_REPO_NAME }}"
+      
+      - name: Get Terraform Outputs
+        working-directory: ./infra
+        id: terraform-outputs
+        run: |
+          echo "ecr_repo=$(terraform output -raw repository_url)" >> $GITHUB_OUTPUT
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+          echo "service_name=$(terraform output -raw service_name)" >> $GITHUB_OUTPUT
+          echo "bucket_name=$(terraform output -raw frontend_bucket_name)" >> $GITHUB_OUTPUT
+          echo "cloudfront_domain=$(terraform output -raw cloudfront_domain_name)" >> $GITHUB_OUTPUT
+          
+          # Store these values as secrets for future runs
+          aws secretsmanager update-secret --secret-id ${{ secrets.DEPLOYMENT_SECRET_ARN }} --secret-string "{\"ECR_REPO\":\"$(terraform output -raw repository_url)\",\"CLUSTER_NAME\":\"$(terraform output -raw cluster_name)\",\"SERVICE_NAME\":\"$(terraform output -raw service_name)\",\"BUCKET_NAME\":\"$(terraform output -raw frontend_bucket_name)\",\"CLOUDFRONT_DOMAIN\":\"$(terraform output -raw cloudfront_domain_name)\"}" || echo "Failed to update secrets, will continue anyway"
+    
+    outputs:
+      ecr_repo: ${{ steps.terraform-outputs.outputs.ecr_repo }}
+      cluster_name: ${{ steps.terraform-outputs.outputs.cluster_name }}
+      service_name: ${{ steps.terraform-outputs.outputs.service_name }}
+      bucket_name: ${{ steps.terraform-outputs.outputs.bucket_name }}
+      cloudfront_domain: ${{ steps.terraform-outputs.outputs.cloudfront_domain }}
+
+  build-backend:
+    name: Build and Push Backend
+    needs: [setup, terraform]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Set ECR Repository
+        id: set-ecr
+        run: |
+          if [ "${{ needs.setup.outputs.deploy_infra }}" == "true" ]; then
+            echo "ECR_REPOSITORY=${{ needs.terraform.outputs.ecr_repo }}" >> $GITHUB_ENV
+          else
+            echo "ECR_REPOSITORY=${{ needs.setup.outputs.ecr_repo }}" >> $GITHUB_ENV
+          fi
+      
+      - name: Build and push Docker image
+        working-directory: ./backend
+        run: |
+          docker build -t $ECR_REPOSITORY:latest -f Dockerfile.prod .
+          docker push $ECR_REPOSITORY:latest
+      
+      - name: Set ECS details
+        id: set-ecs
+        run: |
+          if [ "${{ needs.setup.outputs.deploy_infra }}" == "true" ]; then
+            echo "CLUSTER_NAME=${{ needs.terraform.outputs.cluster_name }}" >> $GITHUB_ENV
+            echo "SERVICE_NAME=${{ needs.terraform.outputs.service_name }}" >> $GITHUB_ENV
+          else
+            echo "CLUSTER_NAME=${{ needs.setup.outputs.cluster_name }}" >> $GITHUB_ENV
+            echo "SERVICE_NAME=${{ needs.setup.outputs.service_name }}" >> $GITHUB_ENV
+          fi
+      
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+  build-frontend:
+    name: Build and Deploy Frontend
+    needs: [setup, terraform, build-backend]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Set frontend details
+        id: set-frontend
+        run: |
+          if [ "${{ needs.setup.outputs.deploy_infra }}" == "true" ]; then
+            echo "CLOUDFRONT_DOMAIN=${{ needs.terraform.outputs.cloudfront_domain }}" >> $GITHUB_ENV
+            echo "BUCKET_NAME=${{ needs.terraform.outputs.bucket_name }}" >> $GITHUB_ENV
+          else
+            echo "CLOUDFRONT_DOMAIN=${{ needs.setup.outputs.cloudfront_domain }}" >> $GITHUB_ENV
+            echo "BUCKET_NAME=${{ needs.setup.outputs.bucket_name }}" >> $GITHUB_ENV
+          fi
+      
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          echo "VITE_API_URL=https://$CLOUDFRONT_DOMAIN/api" > .env.production
+          npm ci
+          npm run build
+      
+      - name: Deploy to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://$BUCKET_NAME/ --delete
+      
+      - name: Invalidate CloudFront cache
+        run: |
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?DomainName=='$CLOUDFRONT_DOMAIN'].Id" --output text)
+          aws cloudfront create-invalidation --distribution-id $DISTRIBUTION_ID --paths "/*"

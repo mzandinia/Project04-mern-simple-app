@@ -1,12 +1,19 @@
 name: Build and Push to ECR
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/docker-build-push.yml"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "backend/**"
+  #     - ".github/workflows/docker-build-push.yml"
   workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.7
+  TF_STATE_BUCKET: terraform-state--8806442
+  TF_STATE_KEY: terraform.tfstate
+  TF_LOCK_TABLE: terraform-locks-8806442
 
 jobs:
   check-changes:

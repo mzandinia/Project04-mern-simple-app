@@ -13,13 +13,13 @@ variable "environment" {
 variable "project_name" {
   description = "Project name"
   type        = string
-  default     = "mern-app"
+  default     = "project1-demo-repo"
 }
 
 variable "ecr_repository_name" {
   description = "Name of the ECR repository"
   type        = string
-  default     = "mern-app-backend"
+  default     = "project1-demo-repo"
 }
 
 variable "image_tag_mutability" {
@@ -46,4 +46,10 @@ variable "docdb_master_password" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "ecs_task_desired_count" {
+  description = "Desired number of ECS tasks"
+  type        = number
+  default     = 2
 }
