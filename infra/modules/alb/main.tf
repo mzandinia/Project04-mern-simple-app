@@ -3,7 +3,7 @@ resource "aws_lb" "this" {
   name               = "${var.project_name}-alb"
   internal           = var.internal
   load_balancer_type = "application"
-  security_groups    = [var.security_group_id]
+  security_groups    = var.security_group_id  # This should now accept a list
   subnets            = var.subnet_ids
 
   enable_deletion_protection = var.enable_deletion_protection

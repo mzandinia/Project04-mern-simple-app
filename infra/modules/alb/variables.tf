@@ -15,8 +15,8 @@ variable "internal" {
 }
 
 variable "security_group_id" {
-  description = "Security group ID for the ALB"
-  type        = string
+  description = "List of security group IDs for the ALB"
+  type        = list(string)
 }
 
 variable "subnet_ids" {
