@@ -123,10 +123,10 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -no-color -target="!module.ecr" -out=terraform.tfplan
+          terraform plan -no-color
 
       - name: Terraform Apply
         run: |
-          terraform apply -auto-approve terraform.tfplan \
+          terraform apply -auto-approve \
                 -var="docdb_master_username=${{ secrets.TF_VAR_docdb_master_username }}" \
                 -var="docdb_master_password=${{ secrets.TF_VAR_docdb_master_password }}"
