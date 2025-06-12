@@ -62,6 +62,7 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
   origin {
     domain_name = aws_cloudfront_vpc_origin.alb.vpc_origin_endpoint_config[0].dns_name
     origin_id   = "ALB-Backend"
+  }
 
   enabled             = true
   is_ipv6_enabled     = true
