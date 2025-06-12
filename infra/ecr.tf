@@ -1,14 +1,12 @@
-# resource "aws_ecr_repository" "backend" {
-#   name                 = var.ecr_repository_name
-#   image_tag_mutability = var.image_tag_mutability
-#   force_delete         = true
+module "ecr" {
+  source = "./modules/ecr"
 
-#   image_scanning_configuration {
-#     scan_on_push = var.scan_on_push
-#   }
+  repository_name         = var.repository_name
+  repository_force_delete = true
 
-#   tags = {
-#     Environment = var.environment
-#     Project     = var.project_name
-#   }
-# }
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+

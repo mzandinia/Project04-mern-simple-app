@@ -1,13 +1,13 @@
 name: Build Infrastructure via Terraform
 
 on:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "infra/**"
-  #     - ".github/workflows/terraform.yml"
-  #     - "!backend/**"
-  #     - "!frontend/**"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+      - "!backend/**"
+      - "!frontend/**"
   workflow_dispatch:
 
 env:

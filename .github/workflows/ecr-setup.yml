@@ -73,7 +73,7 @@ jobs:
 
       - name: Terraform Plan ECR
         id: plan
-        run: terraform plan -target=aws_ecr_repository.backend -out=ecr.tfplan
+        run: terraform plan -target=module.ecr -out=ecr.tfplan
 
       - name: Terraform Apply ECR
         if: github.ref == 'refs/heads/main'
