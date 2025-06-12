@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
-// Get the API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || "";
+// Define API_URL without the domain - we'll use relative paths
+const API_URL = ""; // Empty string for relative paths
 
 export const useProductStore = create((set) => ({
   products: [],
@@ -11,10 +11,11 @@ export const useProductStore = create((set) => ({
       return { success: false, message: "Please fill in all fields." };
     }
 
-    console.log("Making API request to:", `${API_URL}/api/products`);
+    console.log("Making API request to:", `/api/products`);
 
     try {
-      const res = await fetch(`${API_URL}/api/products`, {
+      const res = await fetch(`/api/products`, {
+        // Use relative path
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -38,8 +39,8 @@ export const useProductStore = create((set) => ({
   },
   fetchProducts: async () => {
     try {
-      console.log("Fetching products from:", `${API_URL}/api/products`);
-      const res = await fetch(`${API_URL}/api/products`);
+      console.log("Fetching products from:", `/api/products`);
+      const res = await fetch(`/api/products`); // Use relative path
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -54,36 +55,48 @@ export const useProductStore = create((set) => ({
     }
   },
   deleteProduct: async (pid) => {
-    const res = await fetch(`${API_URL}/api/products/${pid}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (!data.success) return { success: false, message: data.message };
+    try {
+      const res = await fetch(`/api/products/${pid}`, {
+        // Use relative path
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!data.success) return { success: false, message: data.message };
 
-    // update the ui immediately, without needing a refresh
-    set((state) => ({
-      products: state.products.filter((product) => product._id !== pid),
-    }));
-    return { success: true, message: data.message };
+      // update the ui immediately, without needing a refresh
+      set((state) => ({
+        products: state.products.filter((product) => product._id !== pid),
+      }));
+      return { success: true, message: data.message };
+    } catch (error) {
+      console.error("Delete product failed:", error);
+      return { success: false, message: error.message };
+    }
   },
   updateProduct: async (pid, updatedProduct) => {
-    const res = await fetch(`${API_URL}/api/products/${pid}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(updatedProduct),
-    });
-    const data = await res.json();
-    if (!data.success) return { success: false, message: data.message };
+    try {
+      const res = await fetch(`/api/products/${pid}`, {
+        // Use relative path
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedProduct),
+      });
+      const data = await res.json();
+      if (!data.success) return { success: false, message: data.message };
 
-    // update the ui immediately, without needing a refresh
-    set((state) => ({
-      products: state.products.map((product) =>
-        product._id === pid ? data.data : product
-      ),
-    }));
+      // update the ui immediately, without needing a refresh
+      set((state) => ({
+        products: state.products.map((product) =>
+          product._id === pid ? data.data : product
+        ),
+      }));
 
-    return { success: true, message: data.message };
+      return { success: true, message: data.message };
+    } catch (error) {
+      console.error("Update product failed:", error);
+      return { success: false, message: error.message };
+    }
   },
 }));

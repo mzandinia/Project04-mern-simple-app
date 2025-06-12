@@ -43,3 +43,9 @@ variable "create_nat_gateway" {
   type        = bool
   default     = true
 }
+
+variable "create_igw_without_public_subnets" {
+  description = "Whether to create an Internet Gateway without public subnets"
+  type        = bool
+  default     = false
+}

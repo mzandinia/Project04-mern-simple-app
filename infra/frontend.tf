@@ -46,6 +46,9 @@ resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
 }
 
 resource "aws_cloudfront_distribution" "frontend_distribution" {
+  depends_on = [module.network]
+
+  # S3 origin remains the same
   origin {
     domain_name = aws_s3_bucket.frontend_bucket.bucket_regional_domain_name
     origin_id   = "S3-Frontend-Bucket"
@@ -55,18 +58,10 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
     }
   }
 
-  # Backend API origin
+  # Backend API origin using VPC Origin
   origin {
-    domain_name = module.alb.alb_dns_name  # Use the ALB module output
+    domain_name = aws_cloudfront_vpc_origin.alb.vpc_origin_endpoint_config[0].dns_name
     origin_id   = "ALB-Backend"
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"  # Changed from https-only to http-only
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
 
   enabled             = true
   is_ipv6_enabled     = true
@@ -143,5 +138,22 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
   tags = {
     Name        = "${var.project_name}-cloudfront"
     Environment = var.environment
+  }
+}
+
+resource "aws_cloudfront_vpc_origin" "alb" {
+  depends_on = [module.network]
+
+  vpc_origin_endpoint_config {
+    name                   = "${var.project_name}-vpc-origin"
+    arn                    = module.alb.alb_arn
+    http_port              = 80
+    https_port             = 443
+    origin_protocol_policy = "http-only"
+
+    origin_ssl_protocols {
+      items    = ["TLSv1.2"]
+      quantity = 1
+    }
   }
 }

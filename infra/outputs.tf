@@ -29,3 +29,13 @@ output "frontend_url" {
   description = "The URL to access the frontend application"
   value       = "https://${aws_cloudfront_distribution.frontend_distribution.domain_name}"
 }
+
+output "alb_arn" {
+  description = "ARN of the ALB"
+  value       = module.alb.alb_arn
+}
+
+output "alb_dns_name" {
+  description = "DNS name of the Application Load Balancer"
+  value       = module.alb.alb_dns_name
+}

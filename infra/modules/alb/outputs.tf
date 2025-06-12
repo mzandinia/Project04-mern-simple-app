@@ -4,7 +4,7 @@ output "alb_id" {
 }
 
 output "alb_arn" {
-  description = "ARN of the Application Load Balancer"
+  description = "ARN of the ALB"
   value       = aws_lb.this.arn
 }
 

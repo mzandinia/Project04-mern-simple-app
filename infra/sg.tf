@@ -15,7 +15,7 @@ module "alb_sg_http" {
       ip_protocol    = "tcp"
       from_port      = 80
       to_port        = 80
-      description    = "HTTP from CloudFront"
+      description    = "HTTP from CloudFront VPC Origin"
       prefix_list_id = data.aws_ec2_managed_prefix_list.cloudfront.id
     }
   ]
