@@ -31,7 +31,7 @@ variable "vpc_cidr_block" {
 variable "private_subnet_cidrs" {
   description = "CIDR blocks for private subnets"
   type        = list(string)
-  default     = ["10.100.10.0/24"]
+  default     = ["10.100.10.0/24", "10.100.20.0/24"]
 }
 
 variable "ecs_task_desired_count" {

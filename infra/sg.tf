@@ -12,14 +12,14 @@ module "alb_sg" {
 
   ingress_with_ports = [
     {
-      ip_protocol    = "http"
+      ip_protocol    = "tcp"
       from_port      = 80
       to_port        = 80
       description    = "HTTP from CloudFront"
       prefix_list_id = data.aws_ec2_managed_prefix_list.cloudfront.id
     },
     {
-      ip_protocol    = "https"
+      ip_protocol    = "tcp"
       from_port      = 443
       to_port        = 443
       description    = "HTTPS from CloudFront"
