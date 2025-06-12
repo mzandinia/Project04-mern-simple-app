@@ -8,7 +8,7 @@ module "ecs" {
   # Container configuration
   container_name  = "${var.project_name}-container"
   container_image = "${module.ecr.repository_url}:latest"
-  container_port = 3000
+  container_port  = 3000
 
   # Network configuration
   subnet_ids         = module.network.private_subnet_ids
@@ -73,14 +73,14 @@ module "ecs" {
     module.vpc_endpoints_ssm_messages,
     module.vpc_endpoints_ecr_api,
     module.vpc_endpoints_ecr_dkr,
-    module.vpc_endpoints_logs
+    module.vpc_endpoints_logs,
     module.ecs_backend_sg,
     module.ecsRole,
     module.docdb_username_parameter,
     module.docdb_password_parameter,
     module.alb,
     module.network,
-    module.docdb,
+    module.docdb
   ]
 }
 
