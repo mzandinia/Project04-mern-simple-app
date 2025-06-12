@@ -141,11 +141,11 @@ resource "aws_route_table_association" "public" {
 }
 
 # Route table associations for private subnets with IGW
-resource "aws_route_table_association" "private_with_igw" {
-  count          = var.create_private_subnets && var.create_igw_without_public_subnets ? length(var.private_subnet_cidrs) : 0
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private_with_igw[0].id
-}
+# resource "aws_route_table_association" "private_with_igw" {
+#   count          = var.create_private_subnets && var.create_igw_without_public_subnets ? length(var.private_subnet_cidrs) : 0
+#   subnet_id      = aws_subnet.private[count.index].id
+#   route_table_id = aws_route_table.private_with_igw[0].id
+# }
 
 # Route table associations - only for private subnets if enabled and not using IGW
 resource "aws_route_table_association" "private" {
