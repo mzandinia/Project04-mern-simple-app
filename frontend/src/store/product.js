@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+// Get the API URL from environment variables
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 export const useProductStore = create((set) => ({
@@ -9,21 +10,48 @@ export const useProductStore = create((set) => ({
     if (!newProduct.name || !newProduct.image || !newProduct.price) {
       return { success: false, message: "Please fill in all fields." };
     }
-    const res = await fetch(`${API_URL}/api/products`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(newProduct),
-    });
-    const data = await res.json();
-    set((state) => ({ products: [...state.products, data.data] }));
-    return { success: true, message: "Product created successfully" };
+
+    console.log("Making API request to:", `${API_URL}/api/products`);
+
+    try {
+      const res = await fetch(`${API_URL}/api/products`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newProduct),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("API Error:", errorText);
+        return { success: false, message: `Server error: ${res.status}` };
+      }
+
+      const data = await res.json();
+      set((state) => ({ products: [...state.products, data.data] }));
+      return { success: true, message: "Product created successfully" };
+    } catch (error) {
+      console.error("API Request failed:", error);
+      return { success: false, message: error.message };
+    }
   },
   fetchProducts: async () => {
-    const res = await fetch(`${API_URL}/api/products`);
-    const data = await res.json();
-    set({ products: data.data });
+    try {
+      console.log("Fetching products from:", `${API_URL}/api/products`);
+      const res = await fetch(`${API_URL}/api/products`);
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("API Error:", errorText);
+        return;
+      }
+
+      const data = await res.json();
+      set({ products: data.data });
+    } catch (error) {
+      console.error("Failed to fetch products:", error);
+    }
   },
   deleteProduct: async (pid) => {
     const res = await fetch(`${API_URL}/api/products/${pid}`, {

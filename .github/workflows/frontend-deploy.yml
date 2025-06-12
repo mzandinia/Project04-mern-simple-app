@@ -61,9 +61,11 @@ jobs:
 
       - name: Build Frontend
         env:
-          # Use CloudFront URL for API endpoint instead of App Runner URL
+          # Remove the /api prefix as it's already included in the API calls
           VITE_API_URL: https://${{ env.CLOUDFRONT_URL }}
-        run: npm run build
+        run: |
+          echo "Setting API URL to: https://${{ env.CLOUDFRONT_URL }}"
+          npm run build
 
       - name: Deploy to S3
         run: |
