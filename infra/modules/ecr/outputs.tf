@@ -12,3 +12,8 @@ output "registry_id" {
   description = "The registry ID where the repository was created"
   value       = aws_ecr_repository.this.registry_id
 }
+
+output "repository_name" {
+  description = "The registry ID where the repository was created"
+  value       = aws_ecr_repository.this.name
+}
