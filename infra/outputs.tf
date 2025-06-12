@@ -6,5 +6,5 @@ output "repository_url" {
 
 output "cluster_endpoint" {
   description = "The connection endpoint for the DocumentDB cluster"
-  value       = module.docdb.endpoint
+  value       = module.docdb.cluster_endpoint
 }
