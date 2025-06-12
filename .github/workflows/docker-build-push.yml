@@ -1,11 +1,11 @@
 name: Build backend and Push to ECR
 
 on:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "backend/**"
-  #     - ".github/workflows/docker-build-push.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/docker-build-push.yml"
   workflow_dispatch:
 
 env:
