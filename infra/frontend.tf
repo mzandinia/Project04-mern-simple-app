@@ -58,10 +58,17 @@ resource "aws_cloudfront_distribution" "frontend_distribution" {
     }
   }
 
-  # Backend API origin using VPC Origin
+  # Backend API origin using ALB directly
   origin {
-    domain_name = aws_cloudfront_vpc_origin.alb.vpc_origin_endpoint_config[0].dns_name
+    domain_name = module.alb.alb_dns_name
     origin_id   = "ALB-Backend"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
   }
 
   enabled             = true

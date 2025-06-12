@@ -70,7 +70,7 @@ module "vpc_endpoints_s3" {
   project_name            = var.project_name
   environment             = var.environment
   vpc_id                  = module.network.vpc_id
-  private_route_table_ids = [module.network.private_route_table_id]
+  private_route_table_ids = module.network.private_route_table_ids  # Use the correct output name
   endpoint_service_name   = "s3"
   endpoint_type           = "Gateway"
   private_dns_enabled     = false

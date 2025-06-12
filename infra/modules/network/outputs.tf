@@ -30,8 +30,5 @@ output "public_route_table_id" {
 
 output "private_route_table_ids" {
   description = "IDs of the private route tables"
-  value = concat(
-    var.create_private_subnets && !var.create_igw_without_public_subnets ? [aws_route_table.private[0].id] : [],
-    var.create_private_subnets && var.create_igw_without_public_subnets ? [aws_route_table.private_with_igw[0].id] : []
-  )
+  value = var.create_private_subnets ? [aws_route_table.private[0].id] : []
 }

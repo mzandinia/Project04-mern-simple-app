@@ -104,14 +104,23 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Private route table only if private subnets are enabled and not using IGW
+# Private route table only if private subnets are enabled
 resource "aws_route_table" "private" {
-  count  = var.create_private_subnets && !var.create_igw_without_public_subnets ? 1 : 0
+  count  = var.create_private_subnets ? 1 : 0
   vpc_id = aws_vpc.this.id
 
-  # Only add NAT gateway route if it's created
+  # Add IGW route if create_igw_without_public_subnets is true
   dynamic "route" {
-    for_each = var.create_nat_gateway ? [1] : []
+    for_each = var.create_igw_without_public_subnets ? [1] : []
+    content {
+      cidr_block = "0.0.0.0/0"
+      gateway_id = aws_internet_gateway.igw[0].id
+    }
+  }
+
+  # Add NAT gateway route if it's created
+  dynamic "route" {
+    for_each = var.create_nat_gateway && !var.create_igw_without_public_subnets ? [1] : []
     content {
       cidr_block     = "0.0.0.0/0"
       nat_gateway_id = aws_nat_gateway.nat[0].id

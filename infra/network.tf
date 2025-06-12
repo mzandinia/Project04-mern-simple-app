@@ -6,11 +6,11 @@ module "network" {
   vpc_cidr_block = var.vpc_cidr_block
 
   # Control subnet creation
-  create_private_subnets = true  # Set to false to disable private subnets
-  create_public_subnets  = false # Set to false to disable public subnets
-  create_nat_gateway     = false # Set to false to disable NAT gateway
-
-  # New parameter to create IGW without public subnets
+  create_public_subnets  = false # Keep this false to disable public subnets
+  create_private_subnets = true  # Keep this true for private subnets
+  create_nat_gateway     = false # Keep this false to disable NAT gateway
+  
+  # Create IGW without public subnets
   create_igw_without_public_subnets = true
 
   private_subnet_cidrs = var.private_subnet_cidrs
