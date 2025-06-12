@@ -16,7 +16,7 @@ output "registry_id" {
 
 output "repository_name" {
   description = "The registry ID where the repository was created"
-  value       = aws_ecr_repository.this.name
+  value       = module.ecr.name
 }
 # # ECS outputs
 # output "cluster_name" {

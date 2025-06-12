@@ -9,4 +9,3 @@ module "ecr" {
     Project     = var.project_name
   }
 }
-
