@@ -64,14 +64,14 @@ module "vpc_endpoints_logs" {
   private_dns_enabled   = true
 }
 
-# module "vpc_endpoints_s3" {
-#   source = "./modules/vpc_endpoints"
+module "vpc_endpoints_s3" {
+  source = "./modules/vpc_endpoints"
 
-#   project_name           = var.project_name
-#   environment            = var.environment
-#   vpc_id                 = module.network.vpc_id
-#   private_route_table_ids = [module.network.private_route_table_id]
-#   endpoint_service_name  = "s3"
-#   endpoint_type          = "Gateway"
-#   private_dns_enabled    = false
-# }
+  project_name            = var.project_name
+  environment             = var.environment
+  vpc_id                  = module.network.vpc_id
+  private_route_table_ids = [module.network.private_route_table_id]
+  endpoint_service_name   = "s3"
+  endpoint_type           = "Gateway"
+  private_dns_enabled     = false
+}
