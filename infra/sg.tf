@@ -2,12 +2,12 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
-module "alb_sg" {
+module "alb_sg_http" {
   source     = "./modules/security_group"
   depends_on = [module.network]
 
   vpc_id      = module.network.vpc_id
-  name        = "${var.project_name}-alb-sg"
+  name        = "${var.project_name}-alb-http-sg"
   description = "Security group for ALB"
 
   ingress_with_ports = [
@@ -17,7 +17,31 @@ module "alb_sg" {
       to_port        = 80
       description    = "HTTP from CloudFront"
       prefix_list_id = data.aws_ec2_managed_prefix_list.cloudfront.id
-    },
+    }
+  ]
+
+  egress_all_traffic = [
+    {
+      cidr_ipv4   = "0.0.0.0/0"
+      description = "Allow all outbound traffic"
+    }
+  ]
+
+  tags = {
+    Name        = "${var.project_name}-alb-sg"
+    Environment = var.environment
+  }
+}
+
+module "alb_sg_https" {
+  source     = "./modules/security_group"
+  depends_on = [module.network]
+
+  vpc_id      = module.network.vpc_id
+  name        = "${var.project_name}-alb-https-sg"
+  description = "Security group for ALB"
+
+  ingress_with_ports = [
     {
       ip_protocol    = "tcp"
       from_port      = 443
@@ -53,7 +77,14 @@ module "ecs_backend_sg" {
       from_port                    = 3000
       to_port                      = 3000
       ip_protocol                  = "tcp"
-      referenced_security_group_id = module.alb_sg.security_group_id
+      referenced_security_group_id = module.alb_sg_https.security_group_id
+      description                  = "Allow traffic from ALB to backend"
+    },
+    {
+      from_port                    = 3000
+      to_port                      = 3000
+      ip_protocol                  = "tcp"
+      referenced_security_group_id = module.alb_sg_http.security_group_id
       description                  = "Allow traffic from ALB to backend"
     }
   ]
@@ -84,7 +115,14 @@ module "vpc_endpoint_sg" {
       from_port                    = 443
       to_port                      = 443
       ip_protocol                  = "tcp"
-      referenced_security_group_id = module.alb_sg.security_group_id
+      referenced_security_group_id = module.alb_sg_http.security_group_id
+      description                  = "Allow traffic from ALB to VPC endpoints"
+    },
+    {
+      from_port                    = 443
+      to_port                      = 443
+      ip_protocol                  = "tcp"
+      referenced_security_group_id = module.alb_sg_https.security_group_id
       description                  = "Allow traffic from ALB to VPC endpoints"
     },
     {
