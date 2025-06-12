@@ -31,105 +31,23 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check Infrastructure Availability
-        id: check-infra
+      - name: Get Infrastructure Outputs
+        id: tf-outputs
+        working-directory: .
         run: |
-          # Get AWS account ID and region
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
-          AWS_REGION=${{ vars.AWS_REGION }}
-          echo "Using AWS Account: $AWS_ACCOUNT_ID in region: $AWS_REGION"
-
-          MAX_RETRIES=90  # 30 minutes with 20s delay
-          RETRY_COUNT=0
-          INFRA_READY=false
-
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$INFRA_READY" = false ]; do
-            echo "Checking infrastructure components (Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
-
-            # Check App Runner Service
-            echo "Checking App Runner service..."
-            APP_RUNNER_SERVICE=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='mern-simple-app'].[ServiceId,Status]" --output text)
-            if [ ! -z "$APP_RUNNER_SERVICE" ]; then
-              SERVICE_ID=$(echo "$APP_RUNNER_SERVICE" | cut -f1)
-              SERVICE_STATUS=$(echo "$APP_RUNNER_SERVICE" | cut -f2)
-              echo "✅ App Runner service found: $SERVICE_ID (Status: $SERVICE_STATUS)"
-
-              if [ "$SERVICE_STATUS" = "RUNNING" ]; then
-                APP_RUNNER_URL=$(aws apprunner describe-service --service-arn "arn:aws:apprunner:${AWS_REGION}:${AWS_ACCOUNT_ID}:service/mern-simple-app/${SERVICE_ID}" --query "Service.ServiceUrl" --output text)
-                echo "✅ App Runner URL: $APP_RUNNER_URL"
-              else
-                echo "⚠️ App Runner service is not in RUNNING state (current: $SERVICE_STATUS)"
-                APP_RUNNER_URL=""
-              fi
-            else
-              echo "❌ App Runner service not found"
-              APP_RUNNER_URL=""
-            fi
-            if [ -z "$APP_RUNNER_URL" ]; then
-              echo "❌ App Runner URL is empty"
-            else
-              echo "✅ App Runner URL found: $APP_RUNNER_URL"
-            fi
-
-            # Check S3 Bucket
-            echo "Checking S3 bucket..."
-            S3_BUCKET=$(aws s3api list-buckets --query "Buckets[?Name=='sample-frontend-bucket'].Name" --output text)
-            if [ -z "$S3_BUCKET" ]; then
-              echo "❌ S3 bucket not found"
-            else
-              echo "✅ S3 bucket found: $S3_BUCKET"
-            fi
-
-            # Check CloudFront Distribution
-            echo "Checking CloudFront distribution..."
-            CF_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Origins.Items[].DomainName, 'sample-frontend-bucket')].Id" --output text)
-            if [ -z "$CF_DIST" ]; then
-              echo "❌ CloudFront distribution not found"
-            else
-              echo "✅ CloudFront distribution found: $CF_DIST"
-            fi
-
-            # Check if all components are available
-            if [ ! -z "$APP_RUNNER_URL" ] && [ ! -z "$S3_BUCKET" ] && [ ! -z "$CF_DIST" ]; then
-              echo "✅ All infrastructure components are available"
-              echo "APP_RUNNER_URL=https://$APP_RUNNER_URL" >> $GITHUB_ENV
-              echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
-              echo "CF_DISTRIBUTION_ID=$CF_DIST" >> $GITHUB_ENV
-              INFRA_READY=true
-            else
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-                echo "❌ Infrastructure not ready after 30 minutes"
-                exit 1
-              fi
-              echo "⏳ Waiting 20 seconds before next attempt..."
-              sleep 20
-            fi
-          done
-
-          # Check if backend is healthy
-          echo "Checking backend health..."
-          HEALTH_CHECK_RETRIES=30
-          BACKEND_HEALTHY=false
-
-          for i in $(seq 1 $HEALTH_CHECK_RETRIES); do
-            echo "Health check attempt $i/$HEALTH_CHECK_RETRIES..."
-            if curl -s "https://$APP_RUNNER_URL/health" > /dev/null; then
-              echo "✅ Backend is healthy"
-              BACKEND_HEALTHY=true
-              break
-            fi
-
-            if [ $i -eq $HEALTH_CHECK_RETRIES ]; then
-              echo "❌ Backend health check failed after $HEALTH_CHECK_RETRIES attempts"
-              exit 1
-            fi
-
-            echo "⏳ Waiting 10 seconds before next health check..."
-            sleep 10
-          done
+          # Get S3 bucket name from Terraform state
+          S3_BUCKET=$(aws s3 cp s3://${{ env.TF_STATE_BUCKET }}/${{ env.TF_STATE_KEY }} - | jq -r '.outputs.frontend_bucket_name.value')
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          
+          # Get CloudFront distribution ID from Terraform state
+          CF_DISTRIBUTION_ID=$(aws s3 cp s3://${{ env.TF_STATE_BUCKET }}/${{ env.TF_STATE_KEY }} - | jq -r '.outputs.cloudfront_distribution_id.value')
+          echo "CF_DISTRIBUTION_ID=$CF_DISTRIBUTION_ID" >> $GITHUB_ENV
+          
+          # Get CloudFront URL for API endpoint (using ALB through CloudFront)
+          CLOUDFRONT_URL=$(aws s3 cp s3://${{ env.TF_STATE_BUCKET }}/${{ env.TF_STATE_KEY }} - | jq -r '.outputs.cloudfront_distribution_domain.value')
+          echo "CLOUDFRONT_URL=$CLOUDFRONT_URL" >> $GITHUB_ENV
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -143,13 +61,16 @@ jobs:
 
       - name: Build Frontend
         env:
-          VITE_API_URL: ${{ env.APP_RUNNER_URL }}
+          # Use CloudFront URL for API endpoint instead of App Runner URL
+          VITE_API_URL: https://${{ env.CLOUDFRONT_URL }}
         run: npm run build
 
       - name: Deploy to S3
         run: |
+          echo "Deploying to S3 bucket: ${{ env.S3_BUCKET }}"
           aws s3 sync dist/ s3://${{ env.S3_BUCKET }} --delete
 
       - name: Invalidate CloudFront Cache
         run: |
+          echo "Invalidating CloudFront distribution: ${{ env.CF_DISTRIBUTION_ID }}"
           aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION_ID }} --paths "/*"
