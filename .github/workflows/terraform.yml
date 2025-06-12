@@ -6,6 +6,7 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
+      - "!infra/ecr.tf"
       - "!backend/**"
       - "!frontend/**"
   workflow_dispatch:
